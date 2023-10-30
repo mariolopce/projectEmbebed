@@ -1,5 +1,6 @@
 #include "mbed.h"
 #include <cstdint>
+#include <cstdio>
 #include <stdint.h>
 
 
@@ -24,11 +25,12 @@ char data_H[1];
 int redValue;
 
 I2C i2c(PB_9, PB_8);
-//BufferedSerial gps_serial(PA_9, PA_10, 9600);
+BufferedSerial gps_serial(PA_9, PA_10, 9600);
 DigitalOut led(PA_8);
 
 char c[256];
 int value;
+int counter_GPS = 0;
 
 void brightness();
 void tempAndHum();
@@ -42,8 +44,7 @@ void gps();
 
 void measure(){
     value = 0;
-    gps();
-    /*
+    
     while(1){
         brightness();
         tempAndHum();
@@ -52,7 +53,8 @@ void measure(){
         printf("\n");
         ThisThread::sleep_for(2000);
         
-    }*/
+    }
+    
     
 }
 
@@ -127,76 +129,67 @@ void rgb(){
 }
 
 
-void gps(){
-    value = 5;
-    //serial.set_baud(9600);
-    BufferedSerial gps_serial(PA_9, PA_10, 9600);
-    char c[256];
-    while (true) {
-        
-        if(gps_serial.readable()){
-            gps_serial.read(c, 256);
-            printf("\n\n%s", c);
-        }
 
-        if (strncmp(c, "$PGGA", 5) == true) {
-            printf("COINCIDE");
-        }
 
-        /*
-        if (strncmp(c, "GPGGA", 5) == 0) {
-            // Split the sentence using ',' as a delimiter
-            char* tokens[15];
-            char* token = strtok((char*)c, ",");
+
+void parseAndProcessNMEA(const char* sentence) {
+    if (strncmp(sentence, "$GPGGA,", 7) == 0) {
+        counter_GPS++;
+        if (counter_GPS < 2){
+            char* divisions[15];
+            char* token = strtok((char*)sentence, ",");
+
             int i = 0;
             while (token != nullptr) {
-                tokens[i] = token;
+                divisions[i] = token;
                 token = strtok(nullptr, ",");
                 i++;
             }
 
-            printf("GPS Hora: %s\n", token[0]);
+            float time = strtof(divisions[1], nullptr);
+            float latitude = strtof(divisions[2], nullptr);
+            char* NS_ind = divisions[3];
+            float longitude = strtof(divisions[4], nullptr);
+            char* EW_ind = divisions[5];
+            int satellites = strtof(divisions[7], nullptr);
+            float altitude = strtof(divisions[9], nullptr);
+            char* altitde_unit = divisions[10];
+            int totalSeconds = static_cast<int>(time); // Convert to integer (truncate decimal)
+            int hours = totalSeconds / 10000; // Get the hours part (hhmm.ss -> hh)
+            int minutes = (totalSeconds % 10000) / 100; // Get the minutes part (hhmm.ss -> mm)
+            int seconds = totalSeconds % 100; // Get the remaining seconds (hhmm.ss -> ss)
+
+
+            printf("GPS: #sats: %d  Lat(UTC): %f %s  Long(UTC): %f %s  Altitude: %f %s  %02d:%02d:%02d\n",satellites, latitude, NS_ind, longitude, EW_ind, altitude, altitde_unit, hours, minutes, seconds);
+            
         }
-        //printf("\n%s\n", c);
-        */
-        
-        
+
+        if (counter_GPS == 2){
+            counter_GPS = 0;
+        }
     }
-
-
 }
 
-/*
-
-void gps(){
-    value = 5;
+void gps() {
+    char sentence[120];
+    int bytesRead = 0;
     
-    char c[256];
-    if(gps_serial.readable()){
-        gps_serial.read(c, 256);
-        printf("%s", c);
-        
-        if (strncmp(c, "$GPGGA", 6) == 0) {
-            // Split the sentence using ',' as a delimiter
-            char* tokens[15];
-            char* token = strtok((char*)c, ",");
-            int i = 0;
-            while (token != nullptr) {
-                tokens[i] = token;
-                token = strtok(nullptr, ",");
-                i++;
+
+    while (gps_serial.readable()) {
+        char c;
+        if (gps_serial.read(&c, 1)) {
+            if (c == '\n') {
+                sentence[bytesRead] = '\0'; // Null-terminate the string
+                parseAndProcessNMEA(sentence);
+                bytesRead = 0;
+            } else {
+                sentence[bytesRead] = c;
+                bytesRead++;
+                if (bytesRead >= sizeof(sentence) - 1) {
+                    // Buffer overflow, handle or discard the sentence
+                    bytesRead = 0;
+                }
             }
-
-            printf("GPS Hora: %s\n", &token[0]);
         }
-        printf("\n%s\n", c);
-        
-        
-
     }
-
 }
-*/
-
-
-
