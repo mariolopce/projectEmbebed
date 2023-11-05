@@ -28,6 +28,7 @@ I2C i2c(PB_9, PB_8);
 BufferedSerial gps_serial(PA_9, PA_10, 9600);
 DigitalOut led(PA_8);
 
+
 char c[256];
 int value;
 int counter_GPS = 0;
@@ -38,6 +39,7 @@ void rgb();
 void writeRegister();
 void read16();
 void gps();
+void soilMoisture();
 
 
 
@@ -49,6 +51,7 @@ void measure(){
         brightness();
         tempAndHum();
         rgb();
+        soilMoisture();
         gps();
         printf("\n");
         ThisThread::sleep_for(2000);
@@ -57,6 +60,15 @@ void measure(){
     
     
 }
+
+
+void soilMoisture(){
+    AnalogIn soil(PA_0);
+    float soilValue = 0;
+    soilValue = soil.read() * 100;
+    printf("Soil Moisture: %.1f\n", soilValue);
+}
+
 
 void brightness(){
     AnalogIn brightness(PA_4);
@@ -136,15 +148,54 @@ void parseAndProcessNMEA(const char* sentence) {
     if (strncmp(sentence, "$GPGGA,", 7) == 0) {
         counter_GPS++;
         if (counter_GPS < 2){
+            printf("\nGPS SENTNECE: %s\n",sentence);
             char* divisions[15];
-            char* token = strtok((char*)sentence, ",");
+            int divisionCount = 0;
+            //char* token = strtok((char*)sentence, ",");
+            char *wordStart = (char*)sentence; //apuntamos a la dirección donde se almacena la sentencia
+            
+            int i =0;
+            while(true){
+                i++;
+                char currentChar = sentence[i];
+                if (currentChar == ',' || currentChar == '\0'){
+                    int length = &sentence[i] - wordStart;
+                    if(length > 0){
+                        divisions[divisionCount] = (char*)malloc(length + 1);
+                        strncpy(divisions[divisionCount], wordStart, length);
+                        divisions[divisionCount][length] = '\0';
+                        divisionCount++;
 
+                        wordStart = (char*)sentence + i + 1; // se mueve al siguiente caracter
+                    }else{
+                        divisions[divisionCount] = NULL;
+                        wordStart = (char*)sentence + i + 1;
+                        divisionCount ++;
+                    }
+                    
+
+                }
+
+                if(currentChar == '\0'){
+                    break;
+                }
+            }
+
+            for (int j = 0; j < divisionCount; j++) {
+                printf("token: %s\n", divisions[j]);
+                free(divisions[j]); // Don't forget to free allocated memory
+            }
+            
+            /*
             int i = 0;
-            while (token != nullptr) {
+            while (i<15) {
+                
                 divisions[i] = token;
-                token = strtok(nullptr, ",");
+                printf("token: %s\n",  divisions[i]);
+                token = strtok(NULL, ",");
                 i++;
             }
+            printf("Size: %d\n", i);
 
             float time = strtof(divisions[1], nullptr);
             float latitude = strtof(divisions[2], nullptr);
@@ -161,7 +212,7 @@ void parseAndProcessNMEA(const char* sentence) {
 
 
             printf("GPS: #sats: %d  Lat(UTC): %f %s  Long(UTC): %f %s  Altitude: %f %s  %02d:%02d:%02d\n",satellites, latitude, NS_ind, longitude, EW_ind, altitude, altitde_unit, hours, minutes, seconds);
-            
+            */
         }
 
         if (counter_GPS == 2){
