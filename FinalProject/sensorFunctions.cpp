@@ -181,10 +181,7 @@ void parseAndProcessNMEA(const char* sentence) {
                 }
             }
 
-            for (int j = 0; j < divisionCount; j++) {
-                printf("token: %s\n", divisions[j]);
-                free(divisions[j]); // Don't forget to free allocated memory
-            }
+            
             
             /*
             int i = 0;
@@ -196,7 +193,7 @@ void parseAndProcessNMEA(const char* sentence) {
                 i++;
             }
             printf("Size: %d\n", i);
-
+            */
             float time = strtof(divisions[1], nullptr);
             float latitude = strtof(divisions[2], nullptr);
             char* NS_ind = divisions[3];
@@ -211,8 +208,11 @@ void parseAndProcessNMEA(const char* sentence) {
             int seconds = totalSeconds % 100; // Get the remaining seconds (hhmm.ss -> ss)
 
 
-            printf("GPS: #sats: %d  Lat(UTC): %f %s  Long(UTC): %f %s  Altitude: %f %s  %02d:%02d:%02d\n",satellites, latitude, NS_ind, longitude, EW_ind, altitude, altitde_unit, hours, minutes, seconds);
-            */
+            printf("GPS: #sats: %d  Lat(UTC): %f %s  Long(UTC): %f %s  Altitude: %f %s GPS time %02d:%02d:%02d\n",satellites, latitude, NS_ind, longitude, EW_ind, altitude, altitde_unit, hours, minutes, seconds);
+            for (int j = 0; j < divisionCount; j++) {
+                //printf("token: %s\n", divisions[j]);
+                free(divisions[j]); // Don't forget to free allocated memory
+            }
         }
 
         if (counter_GPS == 2){
