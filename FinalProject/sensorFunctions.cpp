@@ -471,5 +471,3 @@ void location() {
     }
 }
 
-
-
