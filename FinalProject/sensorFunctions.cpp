@@ -19,6 +19,9 @@
 #define MAX_REL_HUMIDITY 75
 #define MIN_REL_HUMIDITY 25
 
+#define MAX_RED_COLOR 1
+#define MAX_BLUE_COLOR 1
+
 #define TCS34725_CDATAL 0x14
 #define TCS34725_RDATAL 0x16
 #define TCS34725_GDATAL 0x18
@@ -26,10 +29,12 @@
 #define COMMAND_ADDRESS 0X80
 #define TCS34725_ADDRESS 0x29<<1    // RGB sensor address
 #define Si7021_ADDRESS 0x40<<1      // Temperature humidity address
+#define MMA8451_I2C_ADDRESS 0x1C<<1
 
 extern DigitalOut redLED;   
 extern DigitalOut greenLED;
 extern DigitalOut blueLED;
+
 
 extern uint16_t clear; 
 extern uint16_t red; 
@@ -62,6 +67,16 @@ float maximum_soil = 0.0;
 float minimum_soil = 1000.0;
 int counter_soil = 0;
 
+float x_acc = 0.0;
+float y_acc = 0.0;
+float z_acc = 0.0;
+float maximum_x = -1000.0;
+float minimum_x = 1000.0;
+float maximum_y = -1000.0;
+float minimum_y = 1000.0;
+float maximum_z = -1000.0;
+float minimum_z = 1000.0;
+
 
 float timeGPS, latitude,  longitude, altitude;
 char* NS_ind, *EW_ind, *altitude_unit;
@@ -73,10 +88,15 @@ extern bool mode_ant;
 
 I2C i2c(PB_9, PB_8); 
 DigitalOut led(PB_7);  
+DigitalOut switch_soil(PA_8);
 BufferedSerial GPS(PA_9, PA_10, 9600);
 
 AnalogIn soil(PA_0);
 AnalogIn Brightness(PA_4);
+
+DigitalIn echo(PA_14);
+DigitalOut trig(PA_13);
+Timer echoTimer;
 
 
 void brightness();
@@ -86,9 +106,11 @@ void rgb();
 void read_colour();
 void location();
 void parseSentenceGPS();
+void accelerometer();
 void reset_variables();
 void print_result();
 void print_stats();
+void sound();
 
 int counter_GPS=0;
 int counter_hour=0;
@@ -107,7 +129,7 @@ void measure(){
     
     //GPS.set_baud(9600);
     while(1){
-        
+        led=1;
         
         if (mode == false){
             // If TEST MODE --> Measures are taken each 2 seconds
@@ -116,7 +138,10 @@ void measure(){
             tempAndHum();
             rgb();
             location();
+            accelerometer();
+            sound();
             print_result();
+            //led = 0;
             ThisThread::sleep_for(2000);
         }
         else {
@@ -132,6 +157,8 @@ void measure(){
                 tempAndHum();
                 rgb();
                 location();
+                accelerometer();
+                //led = 0;
                 print_result();
                 
                 if (v_brightness >= MAX_LIGHT || v_brightness <= MIN_LIGHT){
@@ -157,6 +184,20 @@ void measure(){
                     redLED = 1;
                     greenLED = 1;
                     blueLED = 1;
+                }
+                else if ((float)(green/red) < 1.0) {
+                    // RED
+                    redLED = 1;
+                    greenLED = 0;
+                    blueLED = 0;
+                
+                }
+                else if ((float)(green/blue) < 1.0){
+                    // BLUE
+                    redLED = 0;
+                    greenLED = 0;
+                    blueLED = 1;
+
                 }
                 else {
                     // RGB LED switched off
@@ -195,6 +236,7 @@ void print_result()
     printf("TEMP/HUM: Temperature: %.1f,     Relative humidity: %.1f\n", v_temp, v_humidity);
     printf("COLOR SENSOR: Clear: %d  Red: %d  Green: %d  Blue: %d\n", clear, red, green, blue);
     printf("GPS: #sats: %d  Lat(UTC): %f %s  Long(UTC): %f %s  Altitude: %f %s  %02d:%02d:%02d\n",satellites, latitude, NS_ind, longitude, EW_ind, altitude, altitude_unit, hours, minutes, seconds);
+    printf("ACCELOREMETERS: X_axis: %f m/s2, Y_axis: %f m/s2, Z_axis: %f m/s2\n", x_acc, y_acc, z_acc);
     printf("\n");
 }
 
@@ -205,6 +247,10 @@ void print_stats()
     printf("LIGHT: Maximum: %f  Minimum: %f  Mean: %f\n", maximum_brightness, minimum_brightness, mean_brightness);
     printf("TEMPERATURE: Maximum: %f  Minimum: %f  Mean: %f\n", maximum_temperature, minimum_temperature, mean_temperature);
     printf("HUMIDITY: Maximum: %f  Minimum: %f  Mean: %f\n", maximum_humidity, minimum_humidity, mean_humidity);
+    printf("ACCELEROMETERS: Maximum_x: %f m/s2  Minimum_x: %f m/s2\n", maximum_x, minimum_x);
+    printf("                Maximum_y: %f m/s2  Minimum_y: %f m/s2\n", maximum_y, minimum_y);
+    printf("                Maximum_z: %f m/s2  Minimum_z: %f m/s2\n", maximum_z, minimum_z);
+
     if ((max(counter_red,max(counter_green,counter_blue))==counter_red)){
         printf("RGB SENSOR: Dominant: RED, appeared %d times\n", counter_red);
     }
@@ -237,11 +283,20 @@ void reset_variables(){
     counter_brightness = 0;
     counter_temperature = 0;
     counter_soil = 0;
+    maximum_x = -1000.0;
+    maximum_y = -1000.0;
+    maximum_z = -1000.0;
+    minimum_x = 1000.0;
+    minimum_y = 1000.0;
+    minimum_z = 1000.0;
+
+
 
 }
 
 void soilMoisture(){
     // Analog sensor
+    switch_soil = 1;
     v_soilMoisture = soil.read() * 100;
 
     if (mode == true) {
@@ -258,6 +313,7 @@ void soilMoisture(){
         mean_soil = (mean_soil + v_soilMoisture);
         
     }
+    switch_soil = 0;
 }
 
 void brightness(){
@@ -344,10 +400,18 @@ void rgb(){
     configuration[0] = 0x00;              // 
     configuration[1] = 0x03;                         // PON (bit 0) and AEN (bit 1) set to 1
     i2c.write(TCS34725_ADDRESS, configuration, 2);
-    
+
+    wait_us(3000);
+    configuration[0] = 0x01;
+    configuration[1] = 0xC0;
+    i2c.write(TCS34725_ADDRESS, configuration, 2);
+    wait_us(3000);
+    configuration[0] = 0x0F;
+    configuration[1] = 0x01;
+    i2c.write(TCS34725_ADDRESS, configuration, 2);
     //  To ensure the data is read correctly, 
     //  a two-byte read I2C transaction should be used with a read word protocol bit set in the command register
-
+    wait_us(3000);
     clear = read_colour(TCS34725_CDATAL|COMMAND_ADDRESS);
     red = read_colour(TCS34725_RDATAL|COMMAND_ADDRESS);
     green = read_colour(TCS34725_GDATAL|COMMAND_ADDRESS);
@@ -373,6 +437,8 @@ void rgb(){
             counter_blue++;
         }
     }
+
+    
     
 
 
@@ -470,4 +536,111 @@ void location() {
         }
     }
 }
+
+void accelerometer() {
+    char reg[2];
+    reg[0] = 0x2A; // Address of the control register
+    reg[1] = 0x03; // Set active mode, 8-bit samples
+    i2c.write(MMA8451_I2C_ADDRESS, reg, 2);
+
+    reg[0] = 0x09; // Address of the control register
+    reg[1] = 0x40; // Set active mode, 8-bit samples
+    i2c.write(MMA8451_I2C_ADDRESS, reg, 2);
+
+    // Read the X, Y, Z data
+    char data[4]; // Changed the size to 6 as there are 6 bytes of data (2 bytes for each axis)
+    reg[0] = 0x01; // Address of the X MSB register
+    i2c.write(MMA8451_I2C_ADDRESS, reg, 1);
+    i2c.read(MMA8451_I2C_ADDRESS, data, 4); // Read 6 bytes of data (2 bytes for each axis)
+
+    // Combine the high and low bytes for each axis
+    int8_t x = (data[1]);
+    int8_t y = (data[2]);
+    int8_t z = (data[3]);
+
+    int8_t x_flip=0;
+    int8_t y_flip=0;
+    int8_t z_flip=0;
+
+    
+
+    if (x > 127){
+        x_flip = ~x + 0x01;
+        }
+    else {
+        x_flip = x;
+    }
+
+    if (y > 127){
+        y_flip = ~y + 0x01;
+        }
+    else {
+        y_flip = y;
+    }
+
+    if (z > 127){
+        z_flip = ~z + 0x01;
+        }
+    else {
+        z_flip = z;
+    }
+
+    x_acc = (float)x_flip / 64; // Since it's 8-bit, it is 2^7 (128) for resolution
+    y_acc = (float)y_flip / 64;
+    z_acc = (float)z_flip / 64;
+
+    x_acc = 9.81 * x_acc;
+    y_acc = 9.81 * y_acc;
+    z_acc = 9.81 * z_acc;
+
+
+    if (mode == true) {
+        // Only if mode = NORMAL we update maximum, minimum and average values
+        if (mode != mode_ant){
+            maximum_x = -1000.0;
+            minimum_x = 1000.0;
+            maximum_y = -1000.0;
+            minimum_y = 1000.0;
+            maximum_z = -1000.0;
+            minimum_z = 1000.0;
+            mode_ant = mode;
+         }
+        maximum_x = max(maximum_x,x_acc);
+        minimum_x = min(minimum_x,x_acc);
+
+        maximum_y = max(maximum_y,y_acc);
+        minimum_y = min(minimum_y,y_acc);
+
+        maximum_z = max(maximum_z,z_acc);
+        minimum_z = min(minimum_z,z_acc);
+
+    }
+
+    // Conversion to G (assuming 8-bit mode, adjust for 14-bit accordingly)
+   
+
+}
+
+
+void sound(){
+    echoTimer.reset();
+    trig = 1;
+    wait_us(10);
+    trig = 0;
+    while (!echo){}
+    echoTimer.start();
+    while (echo){}
+    echoTimer.stop();
+
+    float dist = (echoTimer.read() * 1000000) / 59;
+    
+     // Calculate the duration of the echo pulse
+    float duration = static_cast<float>(echoTimer.read_us()) / 1000000.0; // Convert us to seconds
+
+    // Calculate the distance based on the speed of sound (approx. 340 m/s)
+    // Divide by 2 for the time to go to the object and back
+    float distance = duration * 340.0 / 2.0;
+    printf("Distance: %.2f - %.2fcm\n", distance * 100, dist); // Print the distance in centimeters
+}
+
 
