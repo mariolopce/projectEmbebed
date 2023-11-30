@@ -6,9 +6,8 @@
 #include <cstring>
 #include <stdint.h>
 #include <string>
-#include "Mutex.h"
 
-#define MAX_LIGHT 75
+#define MAX_LIGHT 70
 #define MIN_LIGHT 0
 
 #define MAX_SOIL 100
@@ -95,7 +94,7 @@ DigitalOut trig(PA_13);
 DigitalIn echo(PA_14);
 float duration_sound;
 extern float distance_sound;
-
+extern Mutex distanceMutex;
 
 
 extern int mode; 
@@ -159,9 +158,9 @@ void measure(){
         }
         else if (mode == 1) {
         // If NORMAL MODE --> We check the limits, we show the maximum, minimum and average
-            //                    and measures are taken each 30 seconds
-            if (repeat_30 == false){
-                to.attach_us(count_30, 5000000);
+            //                    and measures are taken each 30 seconds (now each 5s)
+            if (repeat_30 == false){ //set again the function 
+                to.attach_us(count_30, 5000000); 
                 repeat_30 = true;
             }
             if (flag_30 == true){
@@ -466,7 +465,10 @@ void soilMoisture(){
 
 void brightness(){
     // Analog sensor
-    v_brightness = Brightness.read() * 100;
+    v_brightness = Brightness.read() * 100 * 1.20;
+    if(v_brightness>100){
+        v_brightness = 100;
+    }
     
     if (mode > 0) {
         // Only if mode = NORMAL we update maximum, minimum and average values
@@ -582,33 +584,34 @@ void rgb(){
 
 void parseSentenceGPS(const char* sentence) {
     if (strncmp(sentence, "$GPGGA,", 7) == 0) {
-        // If the sentence does not start with "$GPGGA," we are not interested
-        counter_GPS++;
-        if (counter_GPS < 2){
-            //  In order not to show twice the value of the GPS
+        //Solo si empieza por "$GPGGA,"
+        counter_GPS++; 
+        if (counter_GPS < 2){ //solo obtenemos la primera que llega
+            
             char* divisions[15];
             int divisionCount = 0;
-            char *wordStart = (char*)sentence; // we point to address where it is saved the sentence
+            char *wordStart = (char*)sentence; // puntero a donde esta la frase
             
             int i =0;
-            while(true){
+            while(true){ // para dividir la frase en cada uno de los elementos
                 i++;
-                char currentChar = sentence[i];    
+                char currentChar = sentence[i]; //primer caracter
 
-                // Check for the comma (',') or end of string ('\0')
+                //hasta que se llega a la coma o fin de string
                 if (currentChar == ',' || currentChar == '\0'){
-                    int length = &sentence[i] - wordStart;          // Calculate the length of the data segment
+                    int length = &sentence[i] - wordStart;          // tamaño de la palabra restando direcciones de memoria
+                    
                     // If the segment is non-empty, store it in divisions array
                     if(length > 0){
-                        divisions[divisionCount] = (char*)malloc(length + 1);   // Save space for the segment with the end of string
-                        strncpy(divisions[divisionCount], wordStart, length);   // Copy in divisions the segment
-                        divisions[divisionCount][length] = '\0';                // Add the end of string
+                        divisions[divisionCount] = (char*)malloc(length + 1);   
+                        strncpy(divisions[divisionCount], wordStart, length);   // Se copia la palabra
+                        divisions[divisionCount][length] = '\0';                
                         divisionCount++;
 
-                        wordStart = (char*)sentence + i + 1; // Move to the next character
+                        wordStart = (char*)sentence + i + 1; // se mueve al siguiente caracter
 
                     }else{
-                        // If the segment is empty, store NULL in divisions array
+                        //si entre comas no hay caracter se almacena nulo
                         divisions[divisionCount] = NULL;
                         wordStart = (char*)sentence + i + 1;
                         divisionCount ++;
@@ -640,7 +643,7 @@ void parseSentenceGPS(const char* sentence) {
            
             
             for (int j = 0; j < divisionCount; j++) {     
-                free(divisions[j]); // Free allocated memory
+                free(divisions[j]); // liberar la memoria
             }
         }
 
@@ -656,14 +659,14 @@ void location() {
     
     while (GPS.readable()) {
         char c;
-        if (GPS.read(&c, 1)) {                  // Read one character at a time from the GPS
-            if (c == '\n') {                    // If the character is the end of a sentence    
-                sentence[bytesRead] = '\0';     // Null-terminate the string
-                parseSentenceGPS(sentence);  // Parse the sentence
-                bytesRead = 0;                  // Reset for the next sentence
+        if (GPS.read(&c, 1)) {                  // Se lee un byte (un caracter)
+            if (c == '\n') {                        
+                sentence[bytesRead] = '\0';     
+                parseSentenceGPS(sentence);  
+                bytesRead = 0;                 
             } else {
-                sentence[bytesRead] = c;        // Store c in sentence
-                bytesRead++;                    // Increment the counter of the index
+                sentence[bytesRead] = c;        // se almacena en el array
+                bytesRead++;                    
                 if (bytesRead >= sizeof(sentence) - 1) {
                     // Buffer overflow --> Discard the sentence
                     bytesRead = 0;
@@ -675,17 +678,17 @@ void location() {
 
 void accelerometer() {
     char reg[2];
-    reg[0] = 0x2A; // Address of the control register
-    reg[1] = 0x03; // Set active mode, 8-bit samples
+    reg[0] = 0x2A; // Address of the control register 1
+    reg[1] = 0x03; // Set active mode and fast mode
     i2c.write(MMA8451_I2C_ADDRESS, reg, 2);
 
-    reg[0] = 0x09; // Address of the control register
-    reg[1] = 0x40; // Set active mode, 8-bit samples
+    reg[0] = 0x09; // Address of FIFO setup register
+    reg[1] = 0x40; // set FIFO as  circular buffer
     i2c.write(MMA8451_I2C_ADDRESS, reg, 2);
 
     // Read the X, Y, Z data
     char data[4]; // Changed the size to 6 as there are 6 bytes of data (2 bytes for each axis)
-    reg[0] = 0x01; // Address of the X MSB register
+    reg[0] = 0x01; // Address of the X_MSB register
     i2c.write(MMA8451_I2C_ADDRESS, reg, 1);
     i2c.read(MMA8451_I2C_ADDRESS, data, 4); // Read 6 bytes of data (2 bytes for each axis)
 
@@ -699,7 +702,7 @@ void accelerometer() {
     int8_t z_flip=0;
 
     
-
+    //get number from c'2 to sigend
     if (x > 127){
         x_flip = ~x + 0x01;
         }
@@ -721,17 +724,19 @@ void accelerometer() {
         z_flip = z;
     }
 
-    x_acc = (float)x_flip / 64; // Since it's 8-bit, it is 2^7 (128) for resolution
+    // al ser 8 bits se divide entre 4096/64 para obetner valores en 1g
+    x_acc = (float)x_flip / 64; 
     y_acc = (float)y_flip / 64;
     z_acc = (float)z_flip / 64;
 
+    //Obtener  en m/s
     x_acc = 9.81 * x_acc;
     y_acc = 9.81 * y_acc;
     z_acc = 9.81 * z_acc;
 
 
     if (mode > 0) {
-        // Only if mode = NORMAL we update maximum, minimum and average values
+        // Only if mode = NORMAL or ADVANCE  we update maximum, minimum and average values
         if (mode != mode_ant){
             maximum_x = -1000.0;
             minimum_x = 1000.0;
@@ -752,21 +757,23 @@ void accelerometer() {
 
     }
 
-    // Conversion to G (assuming 8-bit mode, adjust for 14-bit accordingly)
+
 }
 
 void sound(){
     echoTimer.reset();
     trig = 1;
-    wait_us(10);
+    wait_us(10); //pulso de 10us
     trig = 0;
     while (!echo){}
     echoTimer.start();
     while (echo){}
     echoTimer.stop();
 
-    //distanceMutex.lock(); // Lock the Mutex before updating distance_sound
-    duration_sound = static_cast<float>(echoTimer.read_us()) / 1000000.0;
-    distance_sound = duration_sound * 340.0 * 100 / 2.0;
-    //distanceMutex.unlock(); // Unlock the Mutex after updating distance_sound
+    distanceMutex.lock();
+    duration_sound = static_cast<float>(echoTimer.read());
+    distance_sound = duration_sound * 17000.0;
+    distanceMutex.unlock(); 
+
+    //v=d/t -> 340m/s -> velocidad del sonido -> *100 to get cm -> entre dos por que la distancia es ida y vuelta
 }
