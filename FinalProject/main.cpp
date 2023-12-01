@@ -36,7 +36,6 @@ extern void measure();
 
 
 
-
 void button_rise(){
     mode++;
 }
@@ -49,6 +48,7 @@ void blink_led(){
 // main() runs in its own thread in the OS
 int main()
 {
+    
     button.rise(button_rise);
     button.mode(PullUp);
     measureThread.start(measure);

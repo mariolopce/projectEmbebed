@@ -160,7 +160,7 @@ void measure(){
         // If NORMAL MODE --> We check the limits, we show the maximum, minimum and average
             //                    and measures are taken each 30 seconds (now each 5s)
             if (repeat_30 == false){ //set again the function 
-                to.attach_us(count_30, 5000000); 
+                to.attach_us(count_30, 30000000); 
                 repeat_30 = true;
             }
             if (flag_30 == true){
@@ -233,7 +233,7 @@ void measure(){
                 }
                 
                 counter_hour++;
-                if (counter_hour == 5){ // It should be 120
+                if (counter_hour == 120){ 
                     // Stats shown each 30 seconds * 120 --> 1 hour
                     mean_soil = mean_soil/counter_soil;
                     mean_brightness = mean_brightness/counter_brightness;
@@ -256,7 +256,7 @@ void measure(){
         // If ADVANCED MODE --> We check the limits, we show the maximum, minimum and average
             //                    and measures are taken each 30 seconds + telemtric
             if (repeat_30 == false){
-                to.attach_us(count_30, 5000000);
+                to.attach_us(count_30, 30000000);
                 repeat_30 = true;
             }
             if (flag_30 == true){
@@ -333,7 +333,7 @@ void measure(){
                 }
                 
                 counter_hour++;
-                if (counter_hour == 5){ // It should be 120
+                if (counter_hour == 120){
                     // Stats shown each 30 seconds * 120 --> 1 hour
                     mean_soil = mean_soil/counter_soil;
                     mean_brightness = mean_brightness/counter_brightness;
